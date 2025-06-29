@@ -1,18 +1,15 @@
-FROM node:16-alpine
+FROM node:18-alpine
 
 WORKDIR /app
 
 # Copy package files
-COPY package*.json ./
+COPY backend/package*.json ./
 
 # Install dependencies
 RUN npm ci --only=production
 
-# Copy application files
-COPY . .
-
-# Create cron job for price updates
-RUN echo "0 2 1,15 * * node /app/scripts/scrape-prices.js" > /etc/crontabs/root
+# Copy backend application files
+COPY backend/ ./
 
 # Expose port
 EXPOSE 3000
