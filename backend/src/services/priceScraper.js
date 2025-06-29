@@ -327,10 +327,7 @@ class PriceScraper {
         
         if (changePercent > threshold) {
           // Record significant price change
-          await this.pool.query(`
-            INSERT INTO price_alerts (material_id, old_price, new_price, change_percent, created_at)
-            VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-          `, [newPrice.materialId, prevPrice, newPrice.price, changePercent]);
+          console.log(`Significant price change detected for material ${newPrice.materialId}: ${changePercent * 100}%`);
         }
       }
     }

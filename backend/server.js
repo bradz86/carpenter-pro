@@ -62,6 +62,42 @@ async function initDatabase() {
       );
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS scraping_logs (
+        id SERIAL PRIMARY KEY,
+        status VARCHAR(50),
+        started_at TIMESTAMP,
+        completed_at TIMESTAMP,
+        materials_updated INTEGER DEFAULT 0,
+        errors TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS retailer_prices (
+        id SERIAL PRIMARY KEY,
+        material_id INTEGER REFERENCES material_prices(id),
+        retailer VARCHAR(100),
+        price DECIMAL(10,2),
+        url TEXT,
+        in_stock BOOLEAN DEFAULT true,
+        last_scraped TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(material_id, retailer)
+      );
+    `);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS price_alerts (
+        id SERIAL PRIMARY KEY,
+        material_id INTEGER REFERENCES material_prices(id),
+        price_threshold DECIMAL(10,2),
+        alert_type VARCHAR(20), -- 'above' or 'below'
+        notified BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
