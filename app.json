@@ -4,12 +4,12 @@
     "slug": "carpenter-pro",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
-    "userInterfaceStyle": "automatic",
+    "userInterfaceStyle": "light",
+    "main": "index.js",
+    "platforms": ["ios", "android", "web"],
     "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#1976D2"
+      "backgroundColor": "#2c3e50",
+      "resizeMode": "contain"
     },
     "assetBundlePatterns": [
       "**/*"
@@ -20,19 +20,16 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1976D2"
+        "backgroundColor": "#2c3e50"
       },
       "package": "com.carpenterpro.app"
     },
     "web": {
-      "favicon": "./assets/favicon.png"
+      "bundler": "metro"
     },
+    "sdkVersion": "52.0.0",
     "extra": {
-      "apiUrl": "https://carpenter-pro-api.ondigitalocean.app",
-      "eas": {
-        "projectId": "your-project-id"
-      }
+      "apiUrl": "https://carpenterpro-ifq96.ondigitalocean.app"
     }
   }
 }
