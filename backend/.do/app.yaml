@@ -1,0 +1,47 @@
+name: carpenter-pro-api
+region: nyc
+services:
+- build_command: npm install
+  environment_slug: node-js
+  envs:
+  - key: DATABASE_URL
+    scope: RUN_TIME
+    value: ${db.DATABASE_URL}
+  - key: NODE_ENV
+    scope: RUN_TIME
+    value: production
+  - key: BRIGHT_DATA_USERNAME
+    scope: RUN_TIME
+    type: SECRET
+  - key: BRIGHT_DATA_PASSWORD
+    scope: RUN_TIME
+    type: SECRET
+  - key: ADMIN_KEY
+    scope: RUN_TIME
+    type: SECRET
+  - key: JWT_SECRET
+    scope: RUN_TIME
+    type: SECRET
+  - key: PORT
+    scope: RUN_TIME
+    value: "3000"
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: bradz86/carpenter-pro
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: basic-xs
+  name: api
+  routes:
+  - path: /
+  run_command: npm start
+  source_dir: /backend
+databases:
+- cluster_name: carpenter-pro-db
+  db_name: carpenter_pro
+  db_user: carpenter_user
+  engine: PG
+  name: db
+  production: true
+  version: "14"
