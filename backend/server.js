@@ -5,19 +5,26 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 3000;
+const port = process.env.PORT || 8080;
 
 // Import price scraper
 const PriceScraper = require('./src/services/priceScraper');
 const priceScraper = new PriceScraper();
 
-// Database connection
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? {
-    rejectUnauthorized: false
-  } : false
-});
+// Database connection with error handling
+let pool = null;
+let dbConnected = false;
+
+if (process.env.DATABASE_URL) {
+  pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? {
+      rejectUnauthorized: false
+    } : false
+  });
+} else {
+  console.warn('WARNING: DATABASE_URL not configured. Running without database functionality.');
+}
 
 // Middleware
 app.use(cors());
@@ -25,7 +32,17 @@ app.use(express.json());
 
 // Initialize database
 async function initDatabase() {
+  if (!pool) {
+    console.log('Skipping database initialization - no DATABASE_URL configured');
+    return;
+  }
+  
   try {
+    // Test connection
+    await pool.query('SELECT 1');
+    dbConnected = true;
+    console.log('Database connected successfully');
+    
     // Create tables
     await pool.query(`
       CREATE TABLE IF NOT EXISTS material_prices (
@@ -58,7 +75,6 @@ async function initDatabase() {
         id SERIAL PRIMARY KEY,
         material_id INTEGER REFERENCES material_prices(id),
         price DECIMAL(10,2),
-        source VARCHAR(100),
         recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -102,13 +118,35 @@ async function initDatabase() {
     console.log('Database initialized successfully');
   } catch (error) {
     console.error('Database initialization error:', error);
+    dbConnected = false;
   }
 }
 
+// Database check middleware
+const requireDatabase = (req, res, next) => {
+  if (!dbConnected) {
+    return res.status(503).json({ 
+      error: 'Database service unavailable',
+      message: 'The database is not configured or connected. Please set DATABASE_URL environment variable.'
+    });
+  }
+  next();
+};
+
 // Routes
 
+// Health check - ALWAYS responds even without database
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date(),
+    database: dbConnected ? 'connected' : 'not configured',
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // Get all materials
-app.get('/api/materials', async (req, res) => {
+app.get('/api/materials', requireDatabase, async (req, res) => {
   try {
     const { category } = req.query;
     let query = `
@@ -138,7 +176,7 @@ app.get('/api/materials', async (req, res) => {
 });
 
 // Update custom price
-app.post('/api/materials/custom-price', async (req, res) => {
+app.post('/api/materials/custom-price', requireDatabase, async (req, res) => {
   try {
     const { userId, materialId, customPrice } = req.body;
     
@@ -158,7 +196,7 @@ app.post('/api/materials/custom-price', async (req, res) => {
 });
 
 // Get price history
-app.get('/api/materials/:id/history', async (req, res) => {
+app.get('/api/materials/:id/history', requireDatabase, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(
@@ -177,7 +215,7 @@ app.get('/api/materials/:id/history', async (req, res) => {
 });
 
 // Search materials
-app.get('/api/materials/search', async (req, res) => {
+app.get('/api/materials/search', requireDatabase, async (req, res) => {
   try {
     const { q } = req.query;
     const result = await pool.query(
@@ -195,7 +233,7 @@ app.get('/api/materials/search', async (req, res) => {
 });
 
 // Update material prices (for scraper)
-app.post('/api/materials/batch-update', async (req, res) => {
+app.post('/api/materials/batch-update', requireDatabase, async (req, res) => {
   try {
     const { materials } = req.body;
     
@@ -227,7 +265,7 @@ app.post('/api/materials/batch-update', async (req, res) => {
 });
 
 // Get retailer prices for a material
-app.get('/api/materials/:id/retailer-prices', async (req, res) => {
+app.get('/api/materials/:id/retailer-prices', requireDatabase, async (req, res) => {
   try {
     const { id } = req.params;
     const result = await pool.query(`
@@ -245,7 +283,7 @@ app.get('/api/materials/:id/retailer-prices', async (req, res) => {
 });
 
 // Get price alerts
-app.get('/api/price-alerts', async (req, res) => {
+app.get('/api/price-alerts', requireDatabase, async (req, res) => {
   try {
     const { userId } = req.headers;
     const result = await pool.query(`
@@ -265,7 +303,7 @@ app.get('/api/price-alerts', async (req, res) => {
 });
 
 // Trigger manual price update
-app.post('/api/admin/scrape-prices', async (req, res) => {
+app.post('/api/admin/scrape-prices', requireDatabase, async (req, res) => {
   try {
     // Verify admin authorization
     const authHeader = req.headers.authorization;
@@ -288,7 +326,7 @@ app.post('/api/admin/scrape-prices', async (req, res) => {
 });
 
 // Get scraping status
-app.get('/api/admin/scraping-status', async (req, res) => {
+app.get('/api/admin/scraping-status', requireDatabase, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT * FROM scraping_logs
@@ -333,62 +371,65 @@ async function logScrapingError(id, error) {
   `, [error.message, id]);
 }
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({ status: 'healthy', timestamp: new Date() });
-});
-
 // Schedule price updates (runs on the 1st and 15th of each month at 2 AM)
-cron.schedule('0 2 1,15 * *', async () => {
-  console.log('Running scheduled price update...');
-  const scrapingId = await logScrapingStart();
-  
-  try {
-    const result = await priceScraper.scrapeAllPrices();
-    await logScrapingComplete(scrapingId, result);
-  } catch (error) {
-    await logScrapingError(scrapingId, error);
-  }
-});
+if (dbConnected) {
+  cron.schedule('0 2 1,15 * *', async () => {
+    console.log('Running scheduled price update...');
+    const scrapingId = await logScrapingStart();
+    
+    try {
+      const result = await priceScraper.scrapeAllPrices();
+      await logScrapingComplete(scrapingId, result);
+    } catch (error) {
+      await logScrapingError(scrapingId, error);
+    }
+  });
+}
 
 // Start server
-app.listen(port, '0.0.0.0', async () => {
+app.listen(port, async () => {
   console.log(`Server running on port ${port}`);
   await initDatabase();
   
   // Insert default materials if table is empty
-  const count = await pool.query('SELECT COUNT(*) FROM material_prices');
-  if (count.rows[0].count === '0') {
-    console.log('Inserting default materials...');
-    const defaultMaterials = [
-      { category: 'Lumber', name: '2x4x8 Stud', unit: 'each', price: 5.98 },
-      { category: 'Lumber', name: '2x6x8', unit: 'each', price: 8.97 },
-      { category: 'Lumber', name: '2x8x10', unit: 'each', price: 13.45 },
-      { category: 'Lumber', name: '2x10x12', unit: 'each', price: 22.97 },
-      { category: 'Lumber', name: '4x4x8 Post', unit: 'each', price: 19.98 },
-      { category: 'Lumber', name: 'OSB 7/16" 4x8', unit: 'sheet', price: 14.97 },
-      { category: 'Lumber', name: 'Plywood 1/2" 4x8', unit: 'sheet', price: 32.97 },
-      { category: 'Concrete', name: '80lb Concrete Bag', unit: 'bag', price: 8.99 },
-      { category: 'Concrete', name: 'Ready Mix (per yard)', unit: 'cubic yard', price: 125.00 },
-      { category: 'Drywall', name: '1/2" Drywall 4x8', unit: 'sheet', price: 13.98 },
-      { category: 'Drywall', name: 'Joint Compound 5gal', unit: 'bucket', price: 17.98 },
-      { category: 'Drywall', name: 'Drywall Tape 250ft', unit: 'roll', price: 6.98 },
-      { category: 'Roofing', name: 'Architectural Shingles', unit: 'bundle', price: 39.98 },
-      { category: 'Roofing', name: '15lb Felt Paper', unit: 'roll', price: 29.98 },
-      { category: 'Fasteners', name: '16d Framing Nails 50lb', unit: 'box', price: 65.00 },
-      { category: 'Fasteners', name: 'Drywall Screws 5lb', unit: 'box', price: 29.98 },
-      { category: 'Insulation', name: 'R-13 Fiberglass 15"', unit: 'roll', price: 45.98 },
-      { category: 'Insulation', name: 'R-19 Fiberglass 15"', unit: 'roll', price: 62.98 },
-    ];
-    
-    for (const material of defaultMaterials) {
-      await pool.query(
-        `INSERT INTO material_prices (category, name, unit, price, source)
-         VALUES ($1, $2, $3, $4, $5)
-         ON CONFLICT (name) DO NOTHING`,
-        [material.category, material.name, material.unit, material.price, 'default']
-      );
+  if (dbConnected && pool) {
+    try {
+      const count = await pool.query('SELECT COUNT(*) FROM material_prices');
+      if (count.rows[0].count === '0') {
+        console.log('Inserting default materials...');
+        const defaultMaterials = [
+          { category: 'Lumber', name: '2x4x8 Stud', unit: 'each', price: 5.98 },
+          { category: 'Lumber', name: '2x6x8', unit: 'each', price: 8.97 },
+          { category: 'Lumber', name: '2x8x10', unit: 'each', price: 13.45 },
+          { category: 'Lumber', name: '2x10x12', unit: 'each', price: 22.97 },
+          { category: 'Lumber', name: '4x4x8 Post', unit: 'each', price: 19.98 },
+          { category: 'Lumber', name: 'OSB 7/16" 4x8', unit: 'sheet', price: 14.97 },
+          { category: 'Lumber', name: 'Plywood 1/2" 4x8', unit: 'sheet', price: 32.97 },
+          { category: 'Concrete', name: '80lb Concrete Bag', unit: 'bag', price: 8.99 },
+          { category: 'Concrete', name: 'Ready Mix (per yard)', unit: 'cubic yard', price: 125.00 },
+          { category: 'Drywall', name: '1/2" Drywall 4x8', unit: 'sheet', price: 13.98 },
+          { category: 'Drywall', name: 'Joint Compound 5gal', unit: 'bucket', price: 17.98 },
+          { category: 'Drywall', name: 'Drywall Tape 250ft', unit: 'roll', price: 6.98 },
+          { category: 'Roofing', name: 'Architectural Shingles', unit: 'bundle', price: 39.98 },
+          { category: 'Roofing', name: '15lb Felt Paper', unit: 'roll', price: 29.98 },
+          { category: 'Fasteners', name: '16d Framing Nails 50lb', unit: 'box', price: 65.00 },
+          { category: 'Fasteners', name: 'Drywall Screws 5lb', unit: 'box', price: 29.98 },
+          { category: 'Insulation', name: 'R-13 Fiberglass 15"', unit: 'roll', price: 45.98 },
+          { category: 'Insulation', name: 'R-19 Fiberglass 15"', unit: 'roll', price: 62.98 },
+        ];
+        
+        for (const material of defaultMaterials) {
+          await pool.query(
+            `INSERT INTO material_prices (category, name, unit, price, source)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (name) DO NOTHING`,
+            [material.category, material.name, material.unit, material.price, 'default']
+          );
+        }
+        console.log('Default materials inserted');
+      }
+    } catch (error) {
+      console.error('Error checking/inserting default materials:', error);
     }
-    console.log('Default materials inserted');
   }
 });
