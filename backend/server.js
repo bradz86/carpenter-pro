@@ -58,6 +58,7 @@ async function initDatabase() {
         id SERIAL PRIMARY KEY,
         material_id INTEGER REFERENCES material_prices(id),
         price DECIMAL(10,2),
+        source VARCHAR(100),
         recorded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
     `);
@@ -351,7 +352,7 @@ cron.schedule('0 2 1,15 * *', async () => {
 });
 
 // Start server
-app.listen(port, async () => {
+app.listen(port, '0.0.0.0', async () => {
   console.log(`Server running on port ${port}`);
   await initDatabase();
   
