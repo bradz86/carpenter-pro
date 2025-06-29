@@ -1,8 +1,7 @@
 name: carpenter-pro
 region: nyc
 services:
-- build_command: cd backend && npm install
-  environment_slug: node-js
+- dockerfile_path: backend/Dockerfile
   envs:
   - key: DATABASE_URL
     scope: RUN_TIME
@@ -42,7 +41,6 @@ services:
   name: api
   routes:
   - path: /
-  run_command: cd backend && npm start
   source_dir: /
 databases:
 - cluster_name: carpenter-pro-db
