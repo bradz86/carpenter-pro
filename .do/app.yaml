@@ -1,7 +1,25 @@
 name: carpenter-pro
 region: nyc
 services:
-- dockerfile_path: backend/Dockerfile
+- name: api
+  dockerfile_path: backend/Dockerfile
+  source_dir: /
+  github:
+    branch: main
+    deploy_on_push: true
+    repo: bradz86/carpenter-pro
+  http_port: 3000
+  instance_count: 1
+  instance_size_slug: basic-xs
+  routes:
+  - path: /
+  health_check:
+    http_path: /health
+    initial_delay_seconds: 10
+    period_seconds: 10
+    timeout_seconds: 5
+    success_threshold: 1
+    failure_threshold: 3
   envs:
   - key: DATABASE_URL
     scope: RUN_TIME
@@ -24,29 +42,9 @@ services:
   - key: PORT
     scope: RUN_TIME
     value: "3000"
-  github:
-    branch: main
-    deploy_on_push: true
-    repo: bradz86/carpenter-pro
-  health_check:
-    http_path: /health
-    initial_delay_seconds: 10
-    period_seconds: 10
-    timeout_seconds: 5
-    success_threshold: 1
-    failure_threshold: 3
-  http_port: 3000
-  instance_count: 1
-  instance_size_slug: basic-xs
-  name: api
-  routes:
-  - path: /
-  source_dir: /
 databases:
-- cluster_name: carpenter-pro-db
-  db_name: carpenter_pro
-  db_user: carpenter_user
-  engine: PG
+- engine: PG
   name: db
-  production: true
+  num_nodes: 1
+  size: db-s-dev-database
   version: "14"
